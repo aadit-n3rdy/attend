@@ -1,0 +1,33 @@
+!_TAG_FILE_FORMAT	2	/extended format; --format=1 will not append ;" to lines/
+!_TAG_FILE_SORTED	1	/0=unsorted, 1=sorted, 2=foldcase/
+!_TAG_OUTPUT_EXCMD	mixed	/number, pattern, mixed, or combineV2/
+!_TAG_OUTPUT_FILESEP	slash	/slash or backslash/
+!_TAG_OUTPUT_MODE	u-ctags	/u-ctags or e-ctags/
+!_TAG_PATTERN_LENGTH_LIMIT	96	/0 for no limit/
+!_TAG_PROC_CWD	/home/n3rdy/dev/skl_py/attend/	//
+!_TAG_PROGRAM_AUTHOR	Universal Ctags Team	//
+!_TAG_PROGRAM_NAME	Universal Ctags	/Derived from Exuberant Ctags/
+!_TAG_PROGRAM_URL	https://ctags.io/	/official site/
+!_TAG_PROGRAM_VERSION	5.9.0	/p5.9.20210905.0/
+Project Attend	README.md	/^Project Attend$/;"	c
+__bitset_to_list	data.py	/^def __bitset_to_list(b):$/;"	f
+__gen_attendence_tname	data.py	/^def __gen_attendence_tname(_class, sec):$/;"	f
+__gen_student_list_tname	data.py	/^def __gen_student_list_tname(_class, sec):$/;"	f
+__list_to_bitset	data.py	/^def __list_to_bitset(l):$/;"	f
+add_attendence_rec	data.py	/^def add_attendence_rec(csv_file, _class, sec, period, sub, start):$/;"	f
+add_studentlist	data.py	/^def add_studentlist(csv_file, _class, sec):$/;"	f
+connection	data.py	/^connection = None$/;"	v
+cursor	data.py	/^cursor = None$/;"	v
+d	test.py	/^import data as d$/;"	I	nameref:module:data
+dt	test.py	/^import datetime as dt$/;"	I	nameref:module:datetime
+f	test.py	/^f = open('sample_attend.csv', 'r', newline='')$/;"	v
+f	test.py	/^f = open('sample_studentlist.csv', 'r', newline='')$/;"	v
+get_absent_dates	data.py	/^def get_absent_dates (_class, sec, rno):$/;"	f
+get_absent_late	data.py	/^def get_absent_late(_class, sec, date, period):$/;"	f
+get_late_count	data.py	/^def get_late_count (_class, sec, rno):$/;"	f
+get_student_list	data.py	/^def get_student_list(_class, sec):$/;"	f
+init_data	data.py	/^def init_data(host, user, pwd):$/;"	f
+l	main.py	/^l = data.get_student_list(12, 'A')$/;"	v
+mysql	data.py	/^    import mariadb as mysql$/;"	I	nameref:module:mariadb
+r	test.py	/^r = csv.reader(f)$/;"	v
+sql	data.py	/^    import mysql.connector as sql$/;"	I	nameref:module:mysql.connector

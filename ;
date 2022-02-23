@@ -1,0 +1,200 @@
+import csv
+import datetime
+import os
+import glob
+
+try:
+    import mysql.connector as sql
+except ModuleNotFoundError:
+    import mariadb as mysql
+
+
+''' 
+File hierarchy:
+    data/
+        student_list/
+            <class>_<sec>.csv
+        register/
+            <date in dd-mm-yy>/
+                <class>_<sec>/
+                    <period>_<sub>.csv
+
+Database structure:
+    attend:
+        <class_name>_studentlist
+        <class_name>_attendence
+
+<class_name>_student_list:
+name char[32], primary key
+rno char[6], unique, not null
+
+<class_name>_attendence:
+date DATE,
+period int,
+sub char[3],
+absent binary(4),
+late binary(4),
+less_time binary(4)
+
+Subject codes:
+    mat: maths/entre
+    phy: phyics
+    cem: chem
+    eng: english
+    ele: elective (bio/cs)
+    sci: science
+    sec: second language
+    thi: third language
+    soc: social studies
+
+eg:
+    data/student_list/12_a.csv
+    data/register/29-01-2022/12_a/2_cse.csv
+
+Record format:
+    [Name, time of joining, time spent]
+
+'''
+
+connection = None
+cursor = None
+
+def init_data(host, user, pwd):
+    global connection, cursor
+    try:
+        connection = mysql.connect(host = host, user = user, passwd = pwd, database = "attend")
+        cursor = connection.cursor()
+    except Exception as e:
+        print(e)
+
+def __gen_student_list_fname(_class, sec):
+    return "data/student_list/{}_{}.csv".format(_class, sec)
+
+def __gen_period_fname(date, _class, sec, period, sub):
+    return "data/register/{}/{}_{}/{}_{}.csv".format(
+            date.strftime("%d-%m-%y"),
+            _class,
+            sec,
+            period,
+            sub
+        )
+
+def __get_period_fname(date, _class, sec, period):
+    ''' Get filename when subject is unknown '''
+    fnames = glob.glob(__gen_period_fname(date, _class, sec, period, "*"))
+    if len(fnames) != 1:
+        print("ERROR: file does not exist, or bad filesystem")
+        return -1
+    return fnames[0]
+
+def __gen_student_list_tname(_class, sec):
+    return "{}_{}_studentlist".format(_class, sec)
+
+def __gen_attendence_tname(_class, sec):
+    return "{}_{}_attendence".format(_class, sec)
+
+def get_student_list(_class, sec):
+    cursor.execute("select * from {};".format(__gen_student_list_tname(_class, sec)))
+    return list(cursor)
+
+def get_student_list_old(_class, sec):
+    with open(fname, "r", newline=''):
+        r = csv.reader(f)
+        for i in r:
+            l.append(i[0])
+    return l
+
+def add_attendence_rec(csv_file, _class, sec, period, sub, start):
+    ''' To upload the .csv from a meeting '''
+
+    student_list = get_student_list(_class, sec)
+    absent_rnos = []
+    late_rnos = []
+    csv_data = list(csv_file)
+    for row in csv_data:
+        print(row[1])
+        row[1] = datetime.datetime.strptime(row[1], '%Y-%m-%d %H:%M:%S')
+        if row[1].hour < 6:
+            row[1] = row[1] + datetime.timedelta(hours=6)
+        t = row[2].split(':')
+        row[2] = 60*int(t[0]) + int(t[1]) + int(t[2])/60
+    for row in csv_data:
+        print(row[1])
+    cd_flat = [i for row in csv_data for i in row]
+    cd_names = cd_flat[::3]
+    for i in student_list:
+        if student_list[1] not in cd_names:
+            absent_rnos.append(student_list[0])
+        else:
+            index = cd_names.index(student_list[1])
+            if csv_data[index][2] < 5:
+                absent_rnos.append(student_list[0])
+            elif (csv_date[index][1] - start).total_seconds > 300:
+                late_rnos.append(student_list[0])
+    print("Absent: ", absent_rnos)
+    print("Late: ", late_rnos)
+
+    return None
+
+    ''' Get list rnos not in csv
+    Get list of rnos in csv but spending < 5 mins
+    Get list of rnos who joined late'''
+    fname = __gen_period_fname(date, _class, sec, period, sub)
+    os.makedirs(os.path.dirname(fname), exist_ok=True)  # Ensure the folder exists
+    with open(fname, 'w', newline='') as f:
+        w = csv.writer(f)
+        for row in csv_file:
+            sname = row[0]
+            ''' For each student in the class, check if they were
+            in the meeting, if so correct the time from the csv file
+            (it does not have am or pm) and add to the db, if they did not join
+            then make fields empty and add '''
+            if sname in student_list:
+                t = row[2]
+                h = int(t[:2])
+                if h < 6:
+                    h += 12
+                t = "{%02u}{}".format(h, t[2:])
+                w.writerow([row[0], t, row[2]])
+                student_list.remove(sname)
+        for name in student_list:
+            w.writerow([name, "", ""])
+
+def get_absentees(date, _class, sec, period, min_time="00:05:00"):
+    ''' Student is considered absent if they spend less than
+    min_time in meeting'''
+    absentees = []
+    fname = __get_period_fname(date, _class, sec, period)
+    with open(fname, 'r', newline='') as f:
+        r = csv.reader(f)
+        for row in r:
+            if r[1] == '' or r[3] < min_time:
+                absentees.append(r[0])
+    return absentees
+
+    sl = get_student_list(_class, sec)
+    bitset = 0
+
+def get_late(date, _class, sec, period, after_time):
+    ''' Late if time of joining is after after_time '''
+    late = []
+    fname = __get_period_fname(date, _class, sec, period)
+    with open(fname, 'r', newline='') as f:
+        r = csv.reader(f)
+        for row in r:
+            if r[1] != '' and r[1] > after_time:
+                late.append(r[0])
+    return late
+
+def get_absent_dates(name, _class, sec, ):
+    dates = []
+    fnames = glob.glob(__gen_period_fname("??:??:??", _class, sec, "1", "???"))
+    ''' Go through all dates for the given class and sectionm if not present
+    in first period then assume absent'''
+    for fname in fnames:
+        with open(fname, 'r', newline='') as f:
+            r = csv.reader(f)
+            for row in r:
+                if r[0] == name and r[1] == '':
+                    dates.append(fname[:8])
+    return dates

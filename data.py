@@ -1,21 +1,33 @@
 import csv
 import datetime
 import os
-import glob
+
+try:
+    import mysql.connector as sql
+except ModuleNotFoundError:
+    import mariadb as mysql
 
 
 ''' 
-File hierarchy:
-    data/
-        student_list/
-            <class>_<sec>.csv
-        register/
-            <date in dd-mm-yy>/
-                <class>_<sec>/
-                    <period>_<sub>.csv
+Database structure:
+    attend:
+        <class_name>_studentlist
+        <class_name>_attendence
+
+<class_name>_student_list:
+rno int primary key
+name varchar(255) not null
+
+<class_name>_attendence:
+date DATE,
+period int,
+sub char(3),
+absent bit(4),
+late bit(4)
+primary key(date, period)
 
 Subject codes:
-    mat: maths
+    mat: maths/entre
     phy: phyics
     cem: chem
     eng: english
@@ -34,91 +46,170 @@ Record format:
 
 '''
 
-def __gen_student_list_fname(_class, sec):
-    return "data/student_list/{}_{}.csv".format(_class, sec)
+connection = None
+cursor = None
 
-def __gen_period_fname(date, _class, sec, period, sub):
-    return "data/register/{}/{}_{}/{}_{}.csv".format(
-            date.strftime("%d-%m-%y"),
-            _class,
-            sec,
-            period,
-            sub
-        )
-def __get_period_fname(date, _class, sec, period):
-''' Get filename when subject is unknown '''
-    fnames = glob.glob(__gen_period_fname(date, _class, sec, period, "*"))
-    if len(fnames) != 1:
-        print("ERROR: file does not exist, or bad filesystem")
-        return -1
-    return fnames[0]
+def init_data(host, user, pwd):
+    ''' Inits the connection and the cursor '''
+    global connection, cursor
+    try:
+        connection = mysql.connect(host = host, user = user, passwd = pwd, database = "attend")
+        cursor = connection.cursor()
+    except Exception as e:
+        print(e)
 
-def get_student_list(_class, sec):
-    fname = __gen_student_list_fname(_class, sec)
+def __list_to_bitset(l):
+    ''' Converts the list of absent or late
+    into a bitset of absent or late '''
+    i = 0
+    for rno in l:
+        i += 1<<(rno-1)
+    return i
+
+def __bitset_to_list(b):
+    ''' Converts bitset of absent or late
+    to list of absent or late '''
     l = []
-    with open(fname, "r", newline=''):
-        r = csv.reader(f)
-        for i in r:
-            l.append(i[0])
+    for i in range(0, 33):
+        if b & 1<<i != 0:
+            l.append(i+1)
     return l
 
-def add_attendence_rec(csv_file, date, _class, sec, period, sub):
-''' To upload the .csv from a meeting '''
+def __gen_student_list_tname(_class, sec):
+    ''' Table name for studentlist'''
+    return "{}_{}_studentlist".format(_class, sec)
 
-    fname = __gen_period_fname(date, _class, sec, period, sub)
+def __gen_attendence_tname(_class, sec):
+    ''' Table name for attendence'''
+    return "{}_{}_attendence".format(_class, sec)
+
+def get_student_list(_class, sec):
+    cursor.execute("select * from {};".format(__gen_student_list_tname(_class, sec)))
+    return list(cursor)
+
+def add_studentlist(csv_file, _class, sec):
+    ''' To add a new class to the database '''
+    sl_tname = __gen_student_list_tname(_class, sec)
+    att_tname = __gen_attendence_tname(_class, sec)
+    try:
+        cursor.execute('''create table {} 
+            (rno int, 
+            name varchar(255) not null, 
+            primary key(rno));'''.format(sl_tname))
+    except mysql.Error as e:
+        if e.errno == 1050:
+            return "Student list already exists"
+        else:
+            return "Error creating studentlist table: " + str(e.errno)
+    try:
+        cursor.execute('''create table {} 
+            (date date, 
+            period int, 
+            sub char(3), 
+            absent bit(32), 
+            late bit(32), 
+            primary key(date, period));'''.format(att_tname))
+    except mysql.Error as e:
+        if e.errno == 1050:
+            return "Attendence table already exists"
+    connection.commit()
+    cmd = "insert into {} values( {}, '{}');"
+    for row in csv_file:
+        cursor.execute(cmd.format(sl_tname, int(row[0]), row[1]))
+    connection.commit()
+
+def add_attendence_rec(csv_file, _class, sec, period, sub, start):
+    ''' To upload the .csv from a meeting '''
     student_list = get_student_list(_class, sec)
-    os.makedirs(os.path.dirname(fname), exist_ok=True)  # Ensure the folder exists
-    with open(fname, 'w', newline='') as f:
-        w = csv.writer(f)
-        for row in csv_file:
-            sname = row[0]
-            ''' For each student in the class, check if they were
-            in the meeting, if so correct the time from the csv file
-            (it does not have am or pm) and add to the db, if they did not join
-            then make fields empty and add '''
-            if sname in student_list:
-                t = row[2]
-                h = int(t[:2])
-                if h < 6:
-                    h += 12
-                t = "{%02u}{}".format(h, t[2:])
-                w.writerow([row[0], t, row[2]])
-                student_list.remove(sname)
-        for name in student_list:
-            w.writerow([name, "", ""])
+    absent_rnos = []
+    late_rnos = []
+    csv_data = list(csv_file)
 
-def get_absentees(date, _class, sec, period, min_time="00:05:00"):
-    ''' Student is considered absent if they spend less than
-    min_time in meeting'''
-    absentees = []
-    fname = __get_period_fname(date, _class, sec, period)
-    with open(fname, 'r', newline='') as f:
-        r = csv.reader(f)
-        for row in r:
-            if r[1] == '' or r[3] < min_time:
-                absentees.append(r[0])
-    return absentees
+    for row in csv_data:
+        row[1] = datetime.datetime.strptime(row[1], '%Y-%m-%d %H:%M:%S')
+        if row[1].hour < 6:
+            row[1] = row[1] + datetime.timedelta(hours=6)
+        t = row[2].split(':')
+        row[2] = 60*int(t[0]) + int(t[1]) + int(t[2])/60
 
-def get_late(date, _class, sec, period, after_time):
-    ''' Late if time of joining is after after_time '''
-    late = []
-    fname = __get_period_fname(date, _class, sec, period)
-    with open(fname, 'r', newline='') as f:
-        r = csv.reader(f)
-        for row in r:
-            if r[1] != '' and r[1] > after_time:
-                late.append(r[0])
-    return late
+    cd_flat = [i for row in csv_data for i in row]
+    cd_names = cd_flat[::3]
 
-def get_absent_dates(name, _class, sec, ):
-    dates = []
-    fnames = glob.glob(__gen_period_fname("??:??:??", _class, sec, "1", "???"))
-    ''' Go through all dates for the given class and sectionm if not present
-    in first period then assume absent'''
-    for fname in fnames:
-        with open(fname, 'r', newline='') as f:
-            r = csv.reader(f)
-            for row in r:
-                if r[0] == name and r[1] == '':
-                    dates.append(fname[:8])
-    return dates
+    for i in student_list:
+        if i[1] not in cd_names:
+            absent_rnos.append(i[0])
+        else:
+            index = cd_names.index(i[1])
+            if csv_data[index][2] < 5:
+                absent_rnos.append(i[0])
+            elif (csv_data[index][1] - start).total_seconds() > 300:
+                late_rnos.append(i[0])
+    absent_bs = __list_to_bitset(absent_rnos)
+    late_bs = __list_to_bitset(late_rnos)
+
+    insert_cmd = "insert into {} values('{}', {}, '{}', {}, {});".format(
+        __gen_attendence_tname(_class, sec),
+        datetime.datetime.strftime(start, '%Y-%m-%d'),
+        period,
+        sub,
+        bin(absent_bs),
+        bin(late_bs))
+
+    cursor.execute(insert_cmd)
+    connection.commit()
+
+    return absent_rnos, late_rnos
+
+def get_absent_late(_class, sec, date, period):
+    ''' Returns tuple of absent list and late list. Each list
+    is a list of (rno, name) tuples '''
+    tname = __gen_attendence_tname(_class, sec)
+    cmd = "select absent, late from {} where date = '{}' and period = {}".format(
+            tname,
+            datetime.datetime.strftime(date, '%Y-%m-%d'),
+            period)
+    cursor.execute(cmd)
+    if cursor.rowcount == 0:
+        return "Invalid details"
+    row = next(cursor)
+    absent_bs = int.from_bytes(row[0], "big")
+    late_bs = int.from_bytes(row[1], "big")
+    absent_rnos = __bitset_to_list(absent_bs)
+    late_rnos = __bitset_to_list(late_bs)
+    absent_list = []
+    late_list = []
+
+    cmd = "select * from {} where rno = {};"
+    tname = __gen_student_list_tname(_class, sec)
+    for i in absent_rnos:
+        cursor.execute(cmd.format(tname, i))
+        if cursor.rowcount != 0:
+            absent_list.append(next(cursor))
+    for i in late_rnos:
+        cursor.execute(cmd.format(tname, i))
+        if cursor.rowcount != 0:
+            late_list.append(next(cursor))
+    return absent_list, late_list
+
+def get_absent_dates (_class, sec, rno):
+    ''' Returns a dictionary of dates when student was absent
+    and no. of dates. dictionary keys are dates, values are list of periods
+    in that day for which student was absent '''
+    tname = __gen_attendence_tname(_class, sec)
+    cmd = "select date, period from {} where absent & 1<<{} != 0;".format(tname, rno-1)
+    cursor.execute(cmd)
+    d = {}
+    for i in cursor:
+        if i[0] in d.keys():
+            d[i[0]].append(i[1])
+        else:
+            d[i[0]] = [i[1]]
+    n = len(d)
+    return d, n
+
+def get_late_count (_class, sec, rno):
+    ''' Returns no. of periods for which a student was late '''
+    tname = __gen_attendence_tname(_class, sec)
+    cmd = "select count(*) from {} where late & 1<<{} != 0;".format(tname, rno-1)
+    cursor.execute(cmd)
+    return next(cursor)[0]
