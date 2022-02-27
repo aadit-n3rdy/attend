@@ -213,3 +213,22 @@ def get_late_count (_class, sec, rno):
     cmd = "select count(*) from {} where late & 1<<{} != 0;".format(tname, rno-1)
     cursor.execute(cmd)
     return next(cursor)[0]
+
+def combine_csv (csv1, csv2, output_csv):
+    w.writerow(["Full Name", "First Seen", "Time in Call"])
+    for row in csv1:
+        output_csv.writerow(row)
+    for row in csv2:
+        output_csv.writerow(row)
+
+def split_csv (input_csv, sec_a, sec_b, _class):
+    studentlist_1 = get_student_list(_class, 'a')
+    studentlist_1 = [i[1] for i in studentlist_1]
+    studentlist_2 = get_student_list(_class, 'b')
+    studentlist_2 = [i[1] for i in studentlist_2]
+
+    for row in input_csv:
+        if row[0] in studentlist_1:
+            sec_a.writerow(row)
+        elif row[0] in studentlist_2:
+            sec_b.writerow(row)
