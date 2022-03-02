@@ -3,7 +3,7 @@ import datetime
 import os
 
 try:
-    import mysql.connector as sql
+    import mysql.connector as mysql
 except ModuleNotFoundError:
     import mariadb as mysql
 
@@ -85,7 +85,7 @@ def __gen_attendence_tname(_class, sec):
 
 def get_student_list(_class, sec):
     cursor.execute("select * from {};".format(__gen_student_list_tname(_class, sec)))
-    return list(cursor)
+    return cursor.fetchall()
 
 def add_studentlist(csv_file, _class, sec):
     ''' To add a new class to the database '''
@@ -169,9 +169,9 @@ def get_absent_late(_class, sec, date, period):
             datetime.datetime.strftime(date, '%Y-%m-%d'),
             period)
     cursor.execute(cmd)
-    if cursor.rowcount == 0:
-        return "Invalid details"
-    row = next(cursor)
+    row = cursor.fetchone()
+    if row == None:
+        return "Invalid details in absent_late"
     absent_bs = int.from_bytes(row[0], "big")
     late_bs = int.from_bytes(row[1], "big")
     absent_rnos = __bitset_to_list(absent_bs)
@@ -183,12 +183,14 @@ def get_absent_late(_class, sec, date, period):
     tname = __gen_student_list_tname(_class, sec)
     for i in absent_rnos:
         cursor.execute(cmd.format(tname, i))
-        if cursor.rowcount != 0:
-            absent_list.append(next(cursor))
+        r = cursor.fetchone()
+        if r != None:
+            absent_list.append(r)
     for i in late_rnos:
         cursor.execute(cmd.format(tname, i))
-        if cursor.rowcount != 0:
-            late_list.append(next(cursor))
+        r = cursor.fetchone()
+        if r != None:
+            absent_list.append(r)
     return absent_list, late_list
 
 def get_absent_dates (_class, sec, rno):
@@ -198,8 +200,9 @@ def get_absent_dates (_class, sec, rno):
     tname = __gen_attendence_tname(_class, sec)
     cmd = "select date, period from {} where absent & 1<<{} != 0;".format(tname, rno-1)
     cursor.execute(cmd)
+    r = cursor.fetchall()
     d = {}
-    for i in cursor:
+    for i in r:
         if i[0] in d.keys():
             d[i[0]].append(i[1])
         else:
@@ -212,7 +215,11 @@ def get_late_count (_class, sec, rno):
     tname = __gen_attendence_tname(_class, sec)
     cmd = "select count(*) from {} where late & 1<<{} != 0;".format(tname, rno-1)
     cursor.execute(cmd)
-    return next(cursor)[0]
+    r = cursor.fetchone()
+    if (r == None):
+        return "Invalid class, sec or rno"
+    else:
+        return r[0]
 
 def combine_csv (csv1, csv2, output_csv):
     w.writerow(["Full Name", "First Seen", "Time in Call"])
